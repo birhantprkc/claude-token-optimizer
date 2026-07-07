@@ -12,6 +12,7 @@ import {
   buildArchiveName,
   buildArchiveContent,
   applyPruneTargets,
+  isOlderThan,
 } from '../src/commands/prune.js';
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,62 @@ describe('unit — pure logic', () => {
     });
   });
 
+  describe('isOlderThan', () => {
+    const now = new Date('2026-07-07T12:00:00');
+
+    it('returns true for a heading dated well before the cutoff', () => {
+      assert.strictEqual(isOlderThan('2026-05-01 session', 30, now), true);
+    });
+
+    it('returns false for a heading dated after the cutoff', () => {
+      assert.strictEqual(isOlderThan('2026-07-06 session', 30, now), false);
+    });
+
+    it('returns false for a heading dated exactly N days ago (boundary, strictly older only)', () => {
+      // now = 2026-07-07, days = 30 -> cutoff = 2026-06-07
+      assert.strictEqual(isOlderThan('2026-06-07 session', 30, now), false);
+    });
+
+    it('returns false for a shape-valid but impossible date', () => {
+      assert.strictEqual(isOlderThan('2026-99-99 session', 30, now), false);
+    });
+  });
+
+  describe('findPruneTargets with days option', () => {
+    const now = new Date('2026-07-07T12:00:00');
+
+    it('returns only old date-headed sessions, excluding fresh sessions, completed, and empty sections', () => {
+      const content = [
+        '# Project',
+        '',
+        '## 2026-05-01',
+        '',
+        'old session',
+        '',
+        '## 2026-07-06',
+        '',
+        'fresh session',
+        '',
+        '## Completed',
+        '',
+        '- done task',
+        '',
+        '## TODO',
+        '',
+      ].join('\n');
+      const targets = findPruneTargets(content, { days: 30, now });
+      assert.strictEqual(targets.length, 1);
+      assert.strictEqual(targets[0].heading, '2026-05-01');
+      assert.strictEqual(targets[0].type, 'session_note');
+    });
+
+    it('without days option, behaves exactly as before (completed/empty included)', () => {
+      const content = '# Project\n\n## Completed\n\n- done\n';
+      const targets = findPruneTargets(content);
+      assert.ok(targets.some(t => t.type === 'completed'));
+    });
+  });
+
   describe('removeSection', () => {
     it('removes a section and its content', () => {
       const content = '# Project\n\n## Completed\n\n- task 1\n\n## Active\n\nstuff\n';
@@ -186,6 +243,12 @@ describe('unit — pure logic', () => {
       assert.ok(line.includes('line 5'));
       assert.ok(line.includes('42 tokens'));
       assert.ok(line.includes('→ Archive to .claude/completions/'));
+    });
+
+    it('prefixes token count with ~ (estimate marker)', () => {
+      const target = { heading: 'Completed', startLine: 5, tokens: 42, destination: 'completions' };
+      const line = formatDryRunLine(target, 0);
+      assert.ok(line.includes('~42 tokens'), `expected ~42 tokens: ${line}`);
     });
 
     it('formats an empty target with Delete destination', () => {
@@ -321,6 +384,54 @@ describe('integration — filesystem', () => {
     }
   });
 
+  it('with --days, archives only the old dated session and keeps fresh session + Completed', async () => {
+    function formatDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 60);
+    const freshDate = new Date();
+    freshDate.setDate(freshDate.getDate() - 2);
+
+    const tmpDir = makeTmpDir();
+    const claudeMd = path.join(tmpDir, 'CLAUDE.md');
+    const content = [
+      '# Project',
+      '',
+      `## ${formatDate(oldDate)}`,
+      '',
+      'old session content',
+      '',
+      `## ${formatDate(freshDate)}`,
+      '',
+      'fresh session content',
+      '',
+      '## Completed',
+      '',
+      '- done task',
+      '',
+    ].join('\n');
+    fs.writeFileSync(claudeMd, content, 'utf8');
+    const orig = process.cwd();
+    try {
+      process.chdir(tmpDir);
+      const { pruneCommand } = await import('../src/commands/prune.js');
+      await pruneCommand({ yes: true, days: 30, backup: false });
+      const after = fs.readFileSync(claudeMd, 'utf8');
+      assert.ok(!after.includes(`## ${formatDate(oldDate)}`), 'old session should be removed');
+      assert.ok(after.includes(`## ${formatDate(freshDate)}`), 'fresh session should remain');
+      assert.ok(after.includes('## Completed'), 'Completed section should remain');
+      const archiveDir = path.join(tmpDir, '.claude', 'sessions', 'archive');
+      assert.ok(fs.existsSync(archiveDir), 'sessions/archive dir should be created');
+      const files = fs.readdirSync(archiveDir);
+      assert.strictEqual(files.length, 1, 'one archive file should be written');
+      const archiveContent = fs.readFileSync(path.join(archiveDir, files[0]), 'utf8');
+      assert.ok(archiveContent.includes('old session content'));
+    } finally {
+      process.chdir(orig);
+    }
+  });
+
   it('dry-run does not write files', async () => {
     const tmpDir = makeTmpDir();
     const claudeMd = path.join(tmpDir, 'CLAUDE.md');
@@ -407,6 +518,48 @@ describe('e2e — subprocess', () => {
     );
     const claudeMd = fs.readFileSync(path.join(tmpDir, 'CLAUDE.md'), 'utf8');
     assert.ok(!claudeMd.includes('## Completed'), 'CLAUDE.md should not contain Completed section');
+  });
+
+  it('prefixes token counts with ~ (estimate marker) in --yes output', () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(tmpDir, 'CLAUDE.md'),
+      '# Project\n\n## Active\n\nwork in progress\n\n## Completed\n\n- finished task\n',
+      'utf8',
+    );
+    const result = spawnSync('node', [ctoBin, 'prune', '--yes', '--no-backup'], {
+      cwd: tmpDir,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      encoding: 'utf8',
+      timeout: 10000,
+    });
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(/~\d+ tokens\)/.test(result.stdout), `expected ~N tokens) in target line: ${result.stdout}`);
+    assert.ok(
+      /CLAUDE\.md now ~\d+ tokens \(was ~\d+\)/.test(result.stdout),
+      `expected estimate-prefixed summary: ${result.stdout}`,
+    );
+  });
+
+  it('interactive confirm prints ~ prefixed token count', () => {
+    const tmpDir = makeTmpDir();
+    fs.writeFileSync(
+      path.join(tmpDir, 'CLAUDE.md'),
+      '# Project\n\n## Active\n\nwork in progress\n\n## Completed\n\n- finished task\n',
+      'utf8',
+    );
+    const result = spawnSync('node', [ctoBin, 'prune', '--no-backup'], {
+      cwd: tmpDir,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      encoding: 'utf8',
+      timeout: 10000,
+      input: 'y\n',
+    });
+    assert.strictEqual(result.status, 0, `expected exit 0, got ${result.status}\n${result.stderr}`);
+    assert.ok(
+      /~\d+ tokens\)/.test(result.stdout),
+      `expected ~N tokens) in interactive confirm output: ${result.stdout}`,
+    );
   });
 
   it('--dry-run prints prune targets but does not modify CLAUDE.md', () => {

@@ -69,6 +69,7 @@ export function run() {
     .option('--dry-run', 'show what would be removed without writing')
     .option('--backup', 'write CLAUDE.md.bak before changes (default: on)', true)
     .option('--no-backup', 'skip backup')
+    .option('--days <count>', 'prune only dated session notes older than N days')
     .action(pruneCommand);
 
   const hooks = program
