@@ -22,7 +22,7 @@ export function bar(tokens, target) {
 
 export function formatFileRow(rel, tokens, target) {
   const label = rel.padEnd(34);
-  const tok = String(tokens).padStart(5);
+  const tok = ('~' + tokens).padStart(5);
   const tgt = target ? `  target: ${target}` : '';
   return `  ${label} ${tok} tokens  ${bar(tokens, target)}${tgt}`;
 }
@@ -38,7 +38,7 @@ export function parseWriteLogEntries(logContent) {
 
 export function formatWriteLogRow(entry) {
   const label = entry.filePath.padEnd(34);
-  const tok = String(entry.tokStr).padStart(5);
+  const tok = ('~' + entry.tokStr).padStart(5);
   return `  ${label} ${tok} tokens  (${entry.time})`;
 }
 
@@ -63,7 +63,7 @@ export function buildWatchDisplay(dir, now = new Date()) {
   const lines = [
     `cto watch — token monitor  [${ts}]`, '',
     'Auto-loaded files:', ...fileLines, '',
-    `  ${'Total:'.padEnd(34)} ${String(total).padStart(5)} / ${totalTarget} tokens  ${totalBar}  ${pct}% of target`,
+    `  ${'Total:'.padEnd(34)} ${('~' + total).padStart(5)} / ${totalTarget} tokens  ${totalBar}  ${pct}% of target`,
   ];
 
   const writeLog = path.join(dir, WRITE_LOG);

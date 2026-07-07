@@ -23,16 +23,16 @@ export function formatDiffReport(d, targetLabel, backupLabel) {
     chalk.bold(`📊 Token diff — ${targetLabel}`),
     '',
     chalk.dim(`  ${sep}`),
-    `  ${'Before (' + backupLabel + '):'.padEnd(36)} ${chalk.yellow(String(d.backupTokens).padStart(6))} tokens`,
-    `  ${'After  (' + targetLabel + '):'.padEnd(36)} ${chalk.cyan(String(d.currentTokens).padStart(6))} tokens`,
+    `  ${'Before (' + backupLabel + '):'.padEnd(36)} ${chalk.yellow(('~' + d.backupTokens).padStart(6))} tokens`,
+    `  ${'After  (' + targetLabel + '):'.padEnd(36)} ${chalk.cyan(('~' + d.currentTokens).padStart(6))} tokens`,
     chalk.dim(`  ${sep}`),
   ];
 
   if (d.tokenDelta < 0) {
     const saved = Math.abs(d.tokenDelta);
-    lines.push(`  ${'Saved:'.padEnd(36)} ${chalk.green(String(saved).padStart(6))} tokens  ${chalk.green('(-' + d.tokenPct + '%)')}`);
+    lines.push(`  ${'Saved:'.padEnd(36)} ${chalk.green(('~' + saved).padStart(6))} tokens  ${chalk.green('(-' + d.tokenPct + '%)')}`);
   } else if (d.tokenDelta > 0) {
-    lines.push(`  ${'Added:'.padEnd(36)} ${chalk.red('+' + d.tokenDelta.toString().padStart(5))} tokens  ${chalk.red('(+' + d.tokenPct + '%)')}`);
+    lines.push(`  ${'Added:'.padEnd(36)} ${chalk.red(('~+' + d.tokenDelta).padStart(6))} tokens  ${chalk.red('(+' + d.tokenPct + '%)')}`);
   } else {
     lines.push(`  ${chalk.dim('No token change.')}`);
   }
@@ -41,6 +41,8 @@ export function formatDiffReport(d, targetLabel, backupLabel) {
   const lineColor = d.lineDelta < 0 ? chalk.green : d.lineDelta > 0 ? chalk.red : chalk.dim;
   lines.push('');
   lines.push(`  Line diff: ${lineColor(lineSign + d.lineDelta + ' lines')}  (${d.backupLines} → ${d.currentLines})`);
+  lines.push('');
+  lines.push(chalk.dim('  Counts are estimates (Claude 2 tokenizer) — actual usage on current models varies.'));
   lines.push('');
 
   return lines;

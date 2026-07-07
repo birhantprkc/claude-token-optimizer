@@ -77,6 +77,12 @@ describe('unit — pure logic', () => {
       const lines = formatFileBreakdown(files);
       assert.ok(lines[0].includes('123'));
     });
+
+    it('prefixes token count with ~ (estimate marker)', () => {
+      const files = [{ label: 'CLAUDE.md', tokens: 123 }];
+      const lines = formatFileBreakdown(files);
+      assert.ok(lines[0].includes('~123'), `expected ~123 in output: ${lines[0]}`);
+    });
   });
 
   describe('formatMeasureReport()', () => {
@@ -111,6 +117,23 @@ describe('unit — pure logic', () => {
       const text = lines.join('\n');
       assert.ok(text.includes('AFTER'));
       assert.ok(text.includes('cto init'));
+    });
+
+    it('prefixes total token counts with ~ (estimate marker)', () => {
+      const report = { before: 500, after: 100, savings: 400, files: [{ label: 'CLAUDE.md', tokens: 500 }], afterFiles: [] };
+      const lines = formatMeasureReport(report, true, 'myproject');
+      const text = lines.join('\n');
+      assert.ok(text.includes('~500'), `expected ~500 total: ${text}`);
+    });
+
+    it('includes estimate footnote', () => {
+      const report = { before: 100, after: 100, savings: 0, files: [{ label: 'CLAUDE.md', tokens: 100 }], afterFiles: [] };
+      const lines = formatMeasureReport(report, true, 'myproject');
+      const text = lines.join('\n');
+      assert.ok(
+        text.includes('Counts are estimates (Claude 2 tokenizer)'),
+        `expected estimate footnote: ${text}`,
+      );
     });
   });
 });

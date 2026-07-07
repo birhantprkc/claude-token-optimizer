@@ -89,6 +89,22 @@ describe('unit — pure logic', () => {
     const joined = formatDiffReport(d, 'CLAUDE.md', 'CLAUDE.md.bak').join('\n');
     assert.ok(joined.includes('No token change'));
   });
+
+  it('formatDiffReport: prefixes token counts with ~ (estimate marker)', () => {
+    const d = computeDiff('short', 'much longer content here '.repeat(10));
+    const joined = formatDiffReport(d, 'CLAUDE.md', 'CLAUDE.md.bak').join('\n');
+    assert.ok(joined.includes(`~${d.backupTokens}`), `expected ~${d.backupTokens} in output: ${joined}`);
+    assert.ok(joined.includes(`~${d.currentTokens}`), `expected ~${d.currentTokens} in output: ${joined}`);
+  });
+
+  it('formatDiffReport: includes estimate footnote', () => {
+    const d = computeDiff('short', 'much longer content here '.repeat(10));
+    const joined = formatDiffReport(d, 'CLAUDE.md', 'CLAUDE.md.bak').join('\n');
+    assert.ok(
+      joined.includes('Counts are estimates (Claude 2 tokenizer)'),
+      `expected estimate footnote: ${joined}`,
+    );
+  });
 });
 
 describe('integration — filesystem', () => {
