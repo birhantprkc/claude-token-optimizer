@@ -8,11 +8,13 @@ import {
   removeExtraBlankLines,
   shortenCodeFences,
   truncateLongLists,
+  stripMarkup,
   applyCompressionRules,
   countBlankLineBlocks,
   countVerboseFences,
   computeTokenStats,
   compressCommand,
+  printCompressionReport,
 } from '../src/commands/compress.js';
 import { countTokens } from '../src/lib/tokenizer.js';
 
@@ -87,6 +89,100 @@ describe('unit — pure logic', () => {
     });
   });
 
+  describe('stripMarkup', () => {
+    it('removes a single-line HTML comment', () => {
+      const input = 'before\n<!-- comment -->\nafter';
+      const { result, changes } = stripMarkup(input);
+      assert.ok(!result.includes('<!--'));
+      assert.ok(!result.includes('comment'));
+      assert.ok(result.includes('before'));
+      assert.ok(result.includes('after'));
+      assert.ok(changes.some(c => c.includes('HTML comment')), `changes: ${changes}`);
+    });
+
+    it('removes a multi-line HTML comment', () => {
+      const input = 'before\n<!--\nline1\nline2\n-->\nafter';
+      const { result, changes } = stripMarkup(input);
+      assert.ok(!result.includes('<!--'));
+      assert.ok(!result.includes('line1'));
+      assert.ok(result.includes('before'));
+      assert.ok(result.includes('after'));
+      assert.ok(changes.some(c => c.includes('HTML comment')), `changes: ${changes}`);
+    });
+
+    it('replaces an inline SVG block with [SVG Asset]', () => {
+      const input = 'before\n<svg width="24" height="24"><path d="M0 0"/></svg>\nafter';
+      const { result, changes } = stripMarkup(input);
+      assert.ok(result.includes('[SVG Asset]'));
+      assert.ok(!result.includes('<svg'));
+      assert.ok(!result.includes('<path'));
+      assert.ok(changes.some(c => c.includes('SVG')), `changes: ${changes}`);
+    });
+
+    it('strips HTML comments inside code fences (not exempt)', () => {
+      const input = '```html\n<!-- fenced comment -->\ncode\n```';
+      const { result } = stripMarkup(input);
+      assert.ok(!result.includes('<!--'));
+      assert.ok(!result.includes('fenced comment'));
+    });
+
+    it('leaves residue on nested <svg> (lazy match ceiling)', () => {
+      const input = '<svg width="10"><svg width="5"></svg></svg>';
+      const { result } = stripMarkup(input);
+      assert.ok(result.includes('[SVG Asset]'));
+      assert.ok(result.includes('</svg>'), 'nested svg leaves a residual closing tag');
+    });
+
+    it('leaves unclosed <svg (no closing tag) untouched', () => {
+      const input = 'before\n<svg width="10">no closing tag\nafter';
+      const { result, changes } = stripMarkup(input);
+      assert.strictEqual(result, input);
+      assert.ok(!changes.some(c => c.includes('SVG')), `changes: ${changes}`);
+    });
+
+    it('does not treat a self-closing <svg .../> as an opening tag (no cross-match content loss)', () => {
+      const input = '<svg a/> KEEP ME <svg b="1">x</svg> tail';
+      const { result } = stripMarkup(input);
+      assert.ok(result.includes('KEEP ME'), 'content between self-closing and paired svg must survive');
+      assert.ok(result.includes('<svg a/>'), 'self-closing svg left untouched');
+      assert.ok(result.includes('[SVG Asset]'), 'paired svg still collapsed');
+    });
+
+    it('leaves a lone self-closing <svg .../> untouched', () => {
+      const input = 'before <svg width="10" /> after';
+      const { result, changes } = stripMarkup(input);
+      assert.strictEqual(result, input);
+      assert.ok(!changes.some(c => c.includes('SVG')), `changes: ${changes}`);
+    });
+
+    it('does not match <svgfoo> (word-boundary guard)', () => {
+      const input = 'before <svgfoo attr>content</svg> after';
+      const { result } = stripMarkup(input);
+      assert.strictEqual(result, input);
+    });
+
+    it('keeps content between two comments (lazy comment match)', () => {
+      const input = '<!-- a --> keep <!-- b -->';
+      const { result, changes } = stripMarkup(input);
+      assert.ok(result.includes('keep'));
+      assert.ok(changes.some(c => c.includes('2 HTML comments')), `changes: ${changes}`);
+    });
+
+    it('leaves plain content untouched', () => {
+      const input = '# Title\n\nSome plain content with no markup.\n';
+      const { result, changes } = stripMarkup(input);
+      assert.strictEqual(result, input);
+      assert.strictEqual(changes.length, 0);
+    });
+
+    it('produces same output on same input (deterministic)', () => {
+      const input = 'before\n<!-- c -->\n<svg width="1"><path/></svg>\nafter';
+      const r1 = stripMarkup(input).result;
+      const r2 = stripMarkup(input).result;
+      assert.strictEqual(r1, r2);
+    });
+  });
+
   describe('countBlankLineBlocks', () => {
     it('counts blocks of 3+ newlines', () => {
       assert.strictEqual(countBlankLineBlocks('a\n\n\nb\n\n\n\nc'), 2);
@@ -134,6 +230,36 @@ describe('unit — pure logic', () => {
     });
   });
 
+  describe('printCompressionReport', () => {
+    function captureLog(fn) {
+      const lines = [];
+      const orig = console.log;
+      console.log = (...args) => lines.push(args.join(' '));
+      try {
+        fn();
+      } finally {
+        console.log = orig;
+      }
+      return lines.join('\n');
+    }
+
+    it('prefixes before/after token counts with ~ (estimate marker)', () => {
+      const text = captureLog(() =>
+        printCompressionReport({ beforeTokens: 500, afterTokens: 300, saved: 200, pct: 40 }, ['change1']));
+      assert.ok(text.includes('~500'), `expected ~500: ${text}`);
+      assert.ok(text.includes('~300'), `expected ~300: ${text}`);
+    });
+
+    it('includes estimate footnote', () => {
+      const text = captureLog(() =>
+        printCompressionReport({ beforeTokens: 500, afterTokens: 300, saved: 200, pct: 40 }, []));
+      assert.ok(
+        text.includes('Counts are estimates (Claude 2 tokenizer)'),
+        `expected estimate footnote: ${text}`,
+      );
+    });
+  });
+
   describe('applyCompressionRules', () => {
     it('reports blank line removal changes', () => {
       const input = Array.from({ length: 5 }, (_, i) => `## Section ${i}\n\ncontent\n`).join('\n\n\n');
@@ -149,6 +275,15 @@ describe('unit — pure logic', () => {
       const after = countTokens(result);
       assert.ok(after <= before, `after (${after}) should be <= before (${before})`);
       assert.ok(changes.some(c => c.includes('fence')), 'should report fence changes');
+    });
+
+    it('reports HTML comment and SVG removal changes', () => {
+      const input = '# Title\n<!-- comment -->\n<svg width="1"><path/></svg>\ncontent\n';
+      const { result, changes } = applyCompressionRules(input);
+      assert.ok(changes.some(c => c.includes('HTML comment')), `changes: ${changes}`);
+      assert.ok(changes.some(c => c.includes('SVG')), `changes: ${changes}`);
+      assert.ok(result.includes('[SVG Asset]'));
+      assert.ok(!result.includes('<!--'));
     });
 
     it('never removes section headings', () => {
@@ -256,5 +391,31 @@ describe('e2e — subprocess', () => {
 
     const after = fs.readFileSync(path.join(tmpDir, 'CLAUDE.md'), 'utf8');
     assert.strictEqual(after, before, 'CLAUDE.md should be unchanged after --dry-run');
+  });
+
+  it('interactive apply prints ~ prefixed saved token count', () => {
+    const applyTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'compress-apply-'));
+    try {
+      const content = 'line\n\n\n\nother\n```javascript\ncode\n```\n';
+      fs.writeFileSync(path.join(applyTmpDir, 'CLAUDE.md'), content, 'utf8');
+      const binPath = path.resolve(
+        path.dirname(new URL(import.meta.url).pathname),
+        '../bin/cto.js',
+      );
+      const result = spawnSync(process.execPath, [binPath, 'compress'], {
+        cwd: applyTmpDir,
+        encoding: 'utf8',
+        timeout: 10000,
+        input: 'y\n',
+        env: { ...process.env, FORCE_COLOR: '0' },
+      });
+      assert.strictEqual(result.status, 0, `exit ${result.status}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+      assert.ok(
+        /~\d+ tokens freed/.test(result.stdout),
+        `expected ~N tokens freed in stdout: ${result.stdout}`,
+      );
+    } finally {
+      fs.rmSync(applyTmpDir, { recursive: true, force: true });
+    }
   });
 });
