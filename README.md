@@ -60,6 +60,8 @@ npx claude-token-optimizer measure
 cto measure
 ```
 
+Token counts are estimates from the Claude 2 tokenizer — actual usage on current models varies.
+
 ### What You Get
 
 ```

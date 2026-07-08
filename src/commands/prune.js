@@ -66,17 +66,50 @@ function classifyEmpty(sec, next) {
   };
 }
 
-export function findPruneTargets(content) {
+// Pure: formats a Date as local YYYY-MM-DD (no UTC skew from toISOString)
+function formatLocalDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Pure: true if a shape-valid Y-M-D date string is a real calendar date
+function isValidDateString(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const parsed = new Date(y, m - 1, d);
+  return (
+    parsed.getFullYear() === y &&
+    parsed.getMonth() === m - 1 &&
+    parsed.getDate() === d
+  );
+}
+
+// Pure: true if the heading's leading YYYY-MM-DD date is strictly older than `days` ago.
+// Lexicographic comparison against a local-date cutoff string avoids UTC-midnight skew
+// from parsing the heading date itself.
+export function isOlderThan(heading, days, now = new Date()) {
+  const m = heading.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!m) return false;
+  const dateStr = m[1];
+  if (!isValidDateString(dateStr)) return false;
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - days);
+  return dateStr < formatLocalDate(cutoff);
+}
+
+export function findPruneTargets(content, options) {
   const sections = parseSections(content);
   const targets = [];
+  const days = options?.days;
 
   for (let si = 0; si < sections.length; si++) {
     const sec = sections[si];
     const next = sections[si + 1];
-    const target =
-      classifyCompleted(sec) ||
-      classifySession(sec) ||
-      classifyEmpty(sec, next);
+    let target;
+    if (days != null) {
+      const sessionTarget = classifySession(sec);
+      target = sessionTarget && isOlderThan(sec.heading, days, options?.now) ? sessionTarget : null;
+    } else {
+      target = classifyCompleted(sec) || classifySession(sec) || classifyEmpty(sec, next);
+    }
     if (target) targets.push(target);
   }
 
@@ -97,7 +130,7 @@ export function removeSection(content, sectionRaw) {
 export function formatDryRunLine(target, index) {
   const dest = target.destination ? `→ Archive to .claude/${target.destination}/` : '→ Delete';
   return [
-    `  [${index + 1}] "${target.heading}" (line ${target.startLine}, ${target.tokens} tokens)`,
+    `  [${index + 1}] "${target.heading}" (line ${target.startLine}, ~${target.tokens} tokens)`,
     `      ${dest}`,
   ].join('\n');
 }
@@ -144,7 +177,7 @@ function printDryRun(targets) {
 
 async function confirmTarget(rl, target, index) {
   const dest = target.destination ? `→ Archive to .claude/${target.destination}/` : '→ Delete';
-  console.log(`  [${index + 1}] Section "${target.heading}" (line ${target.startLine}, ${target.tokens} tokens)`);
+  console.log(`  [${index + 1}] Section "${target.heading}" (line ${target.startLine}, ~${target.tokens} tokens)`);
   console.log(`      ${chalk.dim(dest)}`);
   const ans = await promptUser(rl, chalk.blue(`      Apply? [Y/n] `));
   return ans.trim().toLowerCase() !== 'n';
@@ -152,7 +185,7 @@ async function confirmTarget(rl, target, index) {
 
 function printTargetYes(target, index) {
   const dest = target.destination ? `→ Archive to .claude/${target.destination}/` : '→ Delete';
-  console.log(`  [${index + 1}] Section "${target.heading}" (line ${target.startLine}, ${target.tokens} tokens)`);
+  console.log(`  [${index + 1}] Section "${target.heading}" (line ${target.startLine}, ~${target.tokens} tokens)`);
   console.log(`      ${chalk.dim(dest)}`);
 }
 
@@ -191,11 +224,11 @@ function commitChanges(claudeMdPath, dir, original, accepted, options) {
   fs.writeFileSync(claudeMdPath, result, 'utf8');
   const afterTokens = countTokens(result);
   const beforeTokens = countTokens(original);
-  console.log(chalk.green(`✓ Saved ${totalSaved} tokens — CLAUDE.md now ${afterTokens} tokens (was ${beforeTokens})`));
+  console.log(chalk.green(`✓ Saved ~${totalSaved} tokens — CLAUDE.md now ~${afterTokens} tokens (was ~${beforeTokens})`));
   console.log('');
 }
 
-function loadTargets(claudeMdPath) {
+function loadTargets(claudeMdPath, options) {
   if (!fs.existsSync(claudeMdPath)) {
     console.error(chalk.red('✗ CLAUDE.md not found. Run: cto init'));
     process.exit(1);
@@ -204,13 +237,30 @@ function loadTargets(claudeMdPath) {
   console.log(chalk.bold('cto prune — scanning CLAUDE.md'));
   console.log('');
   const original = fs.readFileSync(claudeMdPath, 'utf8');
-  return { original, targets: findPruneTargets(original) };
+  const findOptions = options?.days != null ? { days: options.days, now: options.now } : undefined;
+  return { original, targets: findPruneTargets(original, findOptions) };
+}
+
+// Pure: validates the --days value; returns an error message or null if valid
+export function validateDays(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    return 'Invalid --days value: must be an integer >= 1.';
+  }
+  return null;
 }
 
 export async function pruneCommand(options) {
+  if (options?.days != null) {
+    const error = validateDays(options.days);
+    if (error) {
+      console.error(chalk.red(`✗ ${error}`));
+      process.exit(1);
+    }
+  }
   const dir = process.cwd();
   const claudeMdPath = path.join(dir, 'CLAUDE.md');
-  const { original, targets } = loadTargets(claudeMdPath);
+  const { original, targets } = loadTargets(claudeMdPath, options);
   if (targets.length === 0) {
     console.log(chalk.green('  Nothing to prune. CLAUDE.md looks clean.'));
     console.log('');

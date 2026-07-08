@@ -22,7 +22,7 @@ export function computeSavingsPct(before, savings) {
 
 export function formatFileBreakdown(files) {
   if (files.length === 0) return [chalk.dim('  (no auto-loadable files found)')];
-  return files.map(f => `  ${f.label.padEnd(35)} ${f.tokens.toLocaleString().padStart(8)} tokens`);
+  return files.map(f => `  ${f.label.padEnd(35)} ${('~' + f.tokens.toLocaleString()).padStart(8)} tokens`);
 }
 
 export function formatMeasureReport(report, isInitialized, dirName) {
@@ -34,7 +34,7 @@ export function formatMeasureReport(report, isInitialized, dirName) {
     chalk.dim('  ' + '─'.repeat(45)),
     ...formatFileBreakdown(report.files),
     chalk.dim('  ' + '─'.repeat(45)),
-    `  ${'Total auto-loaded:'.padEnd(35)} ${chalk.yellow(report.before.toLocaleString().padStart(8))} tokens`,
+    `  ${'Total auto-loaded:'.padEnd(35)} ${chalk.yellow(('~' + report.before.toLocaleString()).padStart(8))} tokens`,
     '',
   ];
 
@@ -46,16 +46,17 @@ export function formatMeasureReport(report, isInitialized, dirName) {
     lines.push(
       chalk.dim('  AFTER (post-init estimate)'),
       chalk.dim('  ' + '─'.repeat(45)),
-      ...report.afterFiles.map(f => `  ${f.label.padEnd(35)} ${f.tokens.toLocaleString().padStart(8)} tokens`),
+      ...report.afterFiles.map(f => `  ${f.label.padEnd(35)} ${('~' + f.tokens.toLocaleString()).padStart(8)} tokens`),
       chalk.dim('  ' + '─'.repeat(45)),
-      `  ${'Total auto-loaded:'.padEnd(35)} ${chalk.green(report.after.toLocaleString().padStart(8))} tokens`,
+      `  ${'Total auto-loaded:'.padEnd(35)} ${chalk.green(('~' + report.after.toLocaleString()).padStart(8))} tokens`,
       '',
-      chalk.green(`  💡 Savings: ${report.savings.toLocaleString()} tokens (${computeSavingsPct(report.before, report.savings)}%)`),
+      chalk.green(`  💡 Savings: ~${report.savings.toLocaleString()} tokens (${computeSavingsPct(report.before, report.savings)}%)`),
       '',
       `  Run ${chalk.cyan('cto init')} to apply`,
     );
   }
 
+  lines.push(chalk.dim('  Counts are estimates (Claude 2 tokenizer) — actual usage on current models varies.'));
   lines.push('');
   return lines;
 }

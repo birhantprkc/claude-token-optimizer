@@ -138,9 +138,15 @@ describe('integration — filesystem', () => {
   it('shows token count when CLAUDE.md exists', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), 'Hello world this is a test. '.repeat(20));
     const out = buildWatchDisplay(tmpDir);
-    const match = out.match(/CLAUDE\.md\s+(\d+)\s+tokens/);
+    const match = out.match(/CLAUDE\.md\s+~?(\d+)\s+tokens/);
     assert.ok(match, `expected token count in output: ${out.slice(0, 300)}`);
     assert.ok(parseInt(match[1]) > 0, `expected > 0 tokens, got ${match[1]}`);
+  });
+
+  it('prefixes token count with ~ (estimate marker)', () => {
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), 'Hello world this is a test. '.repeat(20));
+    const out = buildWatchDisplay(tmpDir);
+    assert.ok(/CLAUDE\.md\s+~\d+\s+tokens/.test(out), `expected ~ prefixed tokens: ${out.slice(0, 300)}`);
   });
 
   it('includes total line', () => {
@@ -186,8 +192,8 @@ describe('integration — filesystem', () => {
     const out1 = buildWatchDisplay(tmpDir);
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), 'much longer content here '.repeat(50));
     const out2 = buildWatchDisplay(tmpDir);
-    const m1 = out1.match(/CLAUDE\.md\s+(\d+)\s+tokens/);
-    const m2 = out2.match(/CLAUDE\.md\s+(\d+)\s+tokens/);
+    const m1 = out1.match(/CLAUDE\.md\s+~?(\d+)\s+tokens/);
+    const m2 = out2.match(/CLAUDE\.md\s+~?(\d+)\s+tokens/);
     assert.ok(m1 && m2, 'expected token counts in both outputs');
     assert.ok(parseInt(m2[1]) > parseInt(m1[1]), `expected more tokens after bigger file: ${m1[1]} vs ${m2[1]}`);
   });
