@@ -86,6 +86,35 @@ describe('pre-tool-bash-guard', () => {
   });
 });
 
+// ── pre-tool-token-guard.sh reads .ctorc ─────────────────────────────────
+
+describe('pre-tool-token-guard .ctorc integration', () => {
+  const SCRIPT = 'pre-tool-token-guard.sh';
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cto-guard-ctorc-'));
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), 'word '.repeat(3000));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('applies WARN threshold from .ctorc when no env var set', () => {
+    fs.writeFileSync(path.join(tmpDir, '.ctorc'), 'CTO_WARN_TOKENS=100\n');
+    const r = runHook(SCRIPT, {}, {}, tmpDir);
+    assert.ok(r.stderr.includes('Token warning'), `expected warning, stderr: ${r.stderr}`);
+  });
+
+  it('env var still overrides .ctorc threshold', () => {
+    fs.writeFileSync(path.join(tmpDir, '.ctorc'), 'CTO_WARN_TOKENS=100\n');
+    const r = runHook(SCRIPT, {}, { CTO_WARN_TOKENS: '999999' }, tmpDir);
+    assert.strictEqual(r.stderr, '');
+  });
+});
+
 // ── notification-token-display.sh ────────────────────────────────────────
 
 describe('notification-token-display', () => {
