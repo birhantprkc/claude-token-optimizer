@@ -9,9 +9,13 @@
 # INSTALL: cto hooks install pre-tool-token-guard
 # Or manually: copy to .claude/hooks/pre-tool-token-guard.sh
 #
-# CONFIGURE (optional env vars in Claude Code settings):
+# CONFIGURE (optional env vars in Claude Code settings, or a .ctorc file):
 #   CTO_WARN_TOKENS  — token count that triggers a warning  (default: 2000)
 #   CTO_BLOCK_TOKENS — token count that blocks the tool call (default: 8000)
+# Precedence: env var > .ctorc file > default below.
+
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$_HOOK_DIR/lib/load-ctorc.sh" ] && source "$_HOOK_DIR/lib/load-ctorc.sh"
 
 MARKER=".claude/sessions/.token-guard-checked"
 WARN_TOKENS="${CTO_WARN_TOKENS:-2000}"

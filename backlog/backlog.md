@@ -9,6 +9,7 @@ Gate: `bash backlog/checks.sh` (= `npm test`, node --test tests/*.test.js — re
 | [TASK-01](TASK-01.md) | compress: strip HTML comments + SVG placeholders (issue #18) | done |
 | [TASK-02](TASK-02.md) | prune: `--days <N>` age filter (issue #22) | done |
 | [TASK-03](TASK-03.md) | label token counts as estimates | done |
+| [TASK-04](TASK-04.md) | `.ctorc` shared config file for hook thresholds (issue #23) | done |
 
 ## Rev log
 
@@ -35,3 +36,10 @@ Gate: `bash backlog/checks.sh` (= `npm test`, node --test tests/*.test.js — re
   changelog — reworded to match code. Nit 2 accepted, no change: the skills' "Parallelize & cost-optimize"
   section recommends opus for critic passes, which sits in tension with the sonnet-for-cost memory note; that
   note is scoped to autopilot routing, and the skill files live outside this repo — flagged to the user instead.
+- **rev.5 — TASK-04** `.ctorc` shared config (issue #23): critiqued by codex (JSON v1) and `claude -p`
+  (plain shell 2-tier, YAGNI-lens) — user picked the shell option. New `templates/hooks/lib/load-ctorc.sh`
+  loader reads allowlisted `CTO_*` keys from `.ctorc` at cwd, env still overrides file (2-tier: env > file >
+  default). Wired into `pre-tool-token-guard.sh` and `user-prompt-inject-context.sh`. Deferred: JSON, schema
+  version, `--show-config`, CLI-flag tier, user-level config, nearest-lookup, monorepo tests — no confirmed
+  pain beyond one commenter. TDD: 6 loader tests + 2 hook-integration tests, all RED before GREEN. Gate green
+  (404 tests, 0 failures).

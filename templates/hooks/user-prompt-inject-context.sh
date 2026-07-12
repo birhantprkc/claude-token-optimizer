@@ -10,10 +10,14 @@
 # INSTALL: cto hooks install user-prompt-inject-context
 # Or manually: copy to .claude/hooks/user-prompt-inject-context.sh
 #
-# CONFIGURE (optional env vars):
+# CONFIGURE (optional env vars, or a .ctorc file):
 #   CTO_LEARNINGS_DIR    — path to learnings dir (default: docs/learnings)
 #   CTO_MAX_INJECT_FILES — max files to inject per prompt (default: 3)
 #   CTO_MAX_INJECT_WORDS — max total words to inject (default: 1500, ~2000 tokens)
+# Precedence: env var > .ctorc file > default below.
+
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[ -f "$_HOOK_DIR/lib/load-ctorc.sh" ] && source "$_HOOK_DIR/lib/load-ctorc.sh"
 
 LEARNINGS_DIR="${CTO_LEARNINGS_DIR:-docs/learnings}"
 MAX_FILES="${CTO_MAX_INJECT_FILES:-3}"
